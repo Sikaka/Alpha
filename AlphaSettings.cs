@@ -11,8 +11,8 @@ namespace Alpha
 		public AlphaSettings()
 		{
 			PathfindingNodeDistance = new RangeNode<int>(20, 1, 50);
-			CalculatePathFrequency = new RangeNode<int>(3000, 1000, 10000);
-			FollowTarget = new TextNode("NONE");
+			BotInputFrequency = new RangeNode<int>(50, 10, 250);
+			ClearPathDistance = new RangeNode<int>(50, 10, 200);
 		}
 
 		public ToggleNode Enable { get; set; } = new ToggleNode(false);
@@ -27,11 +27,11 @@ namespace Alpha
 		[Menu("Movement Key")] public HotkeyNode MovementKey { get; set; } = Keys.T;
 
 		[Menu("Calculate Path Frequency")]
-		public RangeNode<int> CalculatePathFrequency { get; set; }
+		public RangeNode<int> BotInputFrequency { get; set; }
+		[Menu("Clear Path Distance")]
+		public RangeNode<int> ClearPathDistance { get; set; }
 
-
-		[Menu("Follow Target")]
-		public TextNode FollowTarget { get; set; }
+		public TextNode LeaderName { get; set; } = new TextNode("");
 
 	}
 }

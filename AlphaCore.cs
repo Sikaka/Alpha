@@ -33,13 +33,15 @@ namespace Alpha
 		private List<GridPos> _path = null;
 		private Dictionary<string, Vector2> _areaTransitions = new Dictionary<string, Vector2>();
 
+
 		private Random random = new Random();
 
-		private Vector2 _lastKnownTargetPosition;
-		private DateTime _lastMovementKey = DateTime.Now;
-		private DateTime _lastPathCalculatedAt = DateTime.Now;
-		private bool _hasSuccessfullyFollowed = false;
+
+		private List<Vector2> _targetPositions = new List<Vector2>();
+		private Vector2 _lastTargetPosition;
 		private Entity _followTarget;
+
+		private DateTime _nextBotAction = DateTime.Now;
 
 		public AlphaCore()
 		{
@@ -64,12 +66,10 @@ namespace Alpha
 		/// </summary>
 		private void ResetPathing()
 		{
+			_targetPositions = new List<Vector2>();
 			_followTarget = null;
 			_path = null;
-			_hasSuccessfullyFollowed = false;
-			_lastKnownTargetPosition = Vector2.Zero;
-			_lastMovementKey = DateTime.Now;
-			_lastPathCalculatedAt = DateTime.Now;
+			_lastTargetPosition = Vector2.Zero;
 		}
 
 		public override void AreaChange(AreaInstance area)
@@ -132,67 +132,86 @@ namespace Alpha
 
 			//Cache the current follow target (if present)
 			_followTarget = GetFollowingTarget();
-			if (_followTarget != null)
+
+			if(_followTarget != null)
 			{
-				//Unsure if I have to generate a new Vector2 to avoid reading live memory values but lets leave it for now.
-				_lastKnownTargetPosition = new Vector2(_followTarget.GridPos.X, _followTarget.GridPos.Y);
-
-				//Check if we have an active path. 
-				//No path and min distance: Create new
-				//Existing path and repath elapsed: Create new with buffered starting pos
-				if (_path != null)
+				if(GameController.Player.GridPos.Distance(_followTarget.GridPos) >= Settings.ClearPathDistance.Value)
 				{
-					if (DateTime.Now > _lastPathCalculatedAt.AddMilliseconds(Settings.CalculatePathFrequency.Value))
+
+					if (_targetPositions.Count > 0 && _targetPositions.Last().Distance(_followTarget.GridPos) > Settings.PathfindingNodeDistance)
+						_targetPositions.Add(_followTarget.GridPos);
+					else if(_targetPositions.Count == 0)
+						_targetPositions.Add(_followTarget.GridPos);
+				}
+
+				//If we're already close to the target, clear our path. 
+				if(GameController.Player.GridPos.Distance(_followTarget.GridPos) <= Settings.ClearPathDistance)				
+					_targetPositions = new List<Vector2>();
+				
+				_lastTargetPosition = _followTarget.GridPos;
+			}
+
+			//Check last movement input time
+			if (DateTime.Now > _nextBotAction)
+			{
+				//Check if any paths remain. 
+				while (_targetPositions.Count > 1)
+				{
+					//Skip any paths that are too close to us. 
+					if (GameController.Player.GridPos.Distance(_targetPositions[0]) < Settings.PathfindingNodeDistance)
+						_targetPositions.RemoveAt(0);
+					else
+						break;
+				}
+
+				//Check if we have a path remaining
+				if (_targetPositions.Count > 0)
+				{
+					_nextBotAction = DateTime.Now.AddMilliseconds(Settings.BotInputFrequency / 2 + random.Next(Settings.BotInputFrequency / 2));
+					var next = _targetPositions[0];
+					var cameraPos = GridToValidScreenPos(next);
+					Mouse.SetCursorPosHuman2(cameraPos);
+					System.Threading.Thread.Sleep(random.Next(25) + 30);
+					Input.KeyDown(Settings.MovementKey);
+					System.Threading.Thread.Sleep(random.Next(25) + 30);
+					Input.KeyUp(Settings.MovementKey);
+
+					if (GameController.Player.GridPos.Distance(next) < Settings.PathfindingNodeDistance)
+						_targetPositions.RemoveAt(0);
+				}
+				else if (_followTarget == null &&
+					_areaTransitions.Count > 0 &&
+					_lastTargetPosition != Vector2.Zero)
+				{
+					_nextBotAction = DateTime.Now.AddMilliseconds(Settings.BotInputFrequency * 5 + random.Next(Settings.BotInputFrequency * 5));
+					//Check if we're too far away from the transition. If os move towards last known first. 
+					if (_lastTargetPosition.Distance(GameController.Player.GridPos) > Settings.ClearPathDistance)
 					{
-						var lastNode = _path.Last();
-						var distanceFromEndOfPath = Vector2.Distance(new Vector2(lastNode.x, lastNode.y), _lastKnownTargetPosition);
-						var distanceFromCurrent = Vector2.Distance(GameController.Player.GridPos, _lastKnownTargetPosition);
-
-						//recalculate ONLY if both positions are greater than threshold
-
-						if (distanceFromEndOfPath > 50 && distanceFromCurrent > 50)
+						Mouse.SetCursorPosHuman2(GridToValidScreenPos(_lastTargetPosition));
+						System.Threading.Thread.Sleep(random.Next(25) + 30);
+						Input.KeyDown(Settings.MovementKey);
+						System.Threading.Thread.Sleep(random.Next(25) + 30);
+						Input.KeyUp(Settings.MovementKey);
+					}
+					else
+					{
+						var transitionTarget = _areaTransitions.Values.OrderBy(I => I.Distance(GameController.Player.GridPos)).FirstOrDefault();
+						if (transitionTarget.Distance(_lastTargetPosition) <= Settings.ClearPathDistance)
 						{
-							_lastPathCalculatedAt = DateTime.Now.AddSeconds(5);
-
-							//Do not block main thread for pathfinding.
-							new Task(() =>
-							{
-								GeneratePath(GameController.Player.GridPos, _lastKnownTargetPosition);
-							}).Start();
+							Input.KeyUp(Settings.MovementKey);
+							Mouse.SetCursorPosAndLeftClickHuman(GridToValidScreenPos(transitionTarget), 100);
+							_nextBotAction = DateTime.Now.AddSeconds(1);
 						}
 					}
-					Pathfind();
-				}
-				else if(Vector2.Distance(GameController.Player.GridPos, _lastKnownTargetPosition) > 50 && DateTime.Now > _lastPathCalculatedAt.AddMilliseconds(Settings.CalculatePathFrequency.Value))
-				{					
-					//_lastPathCalcualtedAt will be reset at end of generating path. Set it to a large value here to block thread conflicts.
-					_lastPathCalculatedAt = DateTime.Now.AddSeconds(5);
-
-
-					//Do not block main thread for pathfinding.
-					new Task(() =>
-					{
-						GeneratePath(GameController.Player.GridPos, _lastKnownTargetPosition);
-					}).Start();
 				}
 			}
-			else if(_hasSuccessfullyFollowed && DateTime.Now > _lastMovementKey.AddMilliseconds(250 + random.Next(250)))
-			{
-				_lastMovementKey = DateTime.Now;
-				//Check if there's a nearby transition and use it.
-				var transitionTarget = _areaTransitions.Values.OrderBy(I => Vector2.Distance(GameController.Player.GridPos, I)).FirstOrDefault();
-				if (Vector2.Distance(GameController.Player.GridPos, transitionTarget) < 25)
-				{
-					Input.KeyUp(Settings.MovementKey);
-					Mouse.SetCursorPosAndLeftClickHuman(GridToValidScreenPos(transitionTarget), 100);
-				}
-			}
+
 			return null;
 		}
 
 		private Entity GetFollowingTarget()
 		{
-			var leaderName = Settings.FollowTarget.Value.ToLower();
+			var leaderName = Settings.LeaderName.Value.ToLower();
 			try
 			{
 				return GameController.Entities
@@ -204,50 +223,6 @@ namespace Alpha
 			{
 				return null;
 			}
-		}
-
-		private void GeneratePath(Vector2 p1, Vector2 p2)
-		{
-			//This is run in other thread. Data could have changed so just trycatch it for now.
-			try
-			{
-				var startPos = GetMinDistancePath(10);
-				var endpos = new GridPos((int)p2.X, (int)p2.Y);
-				///This is not supposed to be necessary but I had issues where pathfinding wasn't usable a second time.
-				//Need to look into it as this is stupid
-				var map = _mapGrid.Clone();
-				var pathParams = new JumpPointParam(map, startPos, endpos, EndNodeUnWalkableTreatment.ALLOW);
-				var newPath = JumpPointFinder.FindPath(pathParams);
-				_path = newPath;
-				_lastPathCalculatedAt = DateTime.Now;
-			}
-			catch { }
-		}
-
-		/// <summary>
-		/// Returns a starting position for use in pathfinding. If we have an existin gpath, choose a node that's at least 'minDist' units away from current location
-		/// This is to stop pathing backwards once the new path is finished generating (player will already have moved a decent amount of units)
-		/// </summary>
-		/// <param name="minDist">Minimum distance on current path we want used as the startingPos for next path calculation</param>
-		/// <returns>Position to start next pathfinding from.</returns>
-		private GridPos GetMinDistancePath(int minDist)
-		{
-			var startPos = new GridPos((int)GameController.Player.GridPos.X, (int)GameController.Player.GridPos.Y);
-			var distanceSum = 0.0;
-
-			
-			if(_path != null)
-				for(var i =1; i < _path.Count; i++)
-				{
-					distanceSum += Vector2.Distance(new Vector2((int)_path[i-1].x, (int)_path[i-1].y), new Vector2((int)_path[i].x, (int)_path[i].y));
-					if (distanceSum >= minDist)
-					{
-						startPos = _path[i];
-						break;
-					}
-				}
-
-			return startPos;
 		}
 
 		public override void EntityAdded(Entity entity)
@@ -266,7 +241,7 @@ namespace Alpha
 						if (!_areaTransitions.ContainsKey(entity.RenderName))
 						{
 							_areaTransitions.Add(entity.RenderName, entity.GridPos);
-							GeneratePNG();
+							
 						}
 						break;
 				}
@@ -283,59 +258,13 @@ namespace Alpha
 					var end = GridToScreen(new Vector2(_path[i].x, _path[i].y));
 					Graphics.DrawLine(start, end, 2, SharpDX.Color.Pink);
 				}
-			Graphics.DrawText($"Follow Enabled: {Settings.IsFollowEnabled.Value}", new Vector2(100, 20));
+			Graphics.DrawText($"Follow Enabled: {Settings.IsFollowEnabled.Value}", new Vector2(500, 20));
+			Graphics.DrawText($"Pathing Waypoints: {_targetPositions.Count}", new Vector2(500, 40));
 			var counter = 0;
 			foreach (var transition in _areaTransitions)
 			{
 				counter++;
 				Graphics.DrawText($"{transition.Key} at { transition.Value.X} { transition.Value.Y}", new Vector2(100, 20 + counter * 20));
-			}
-		}
-
-		private void Pathfind()
-		{
-			if (_path == null || _path.Count == 0)
-				return;
-
-			//Pointless. This is just so we know if we've moved successfully at least once on this map.
-			_hasSuccessfullyFollowed = true;
-
-			//Select the next point in our current pathfinding
-			var next = _path.First();
-			//Calculate distance to next node
-			var dist = Vector2.Distance(GameController.Player.GridPos, new Vector2(next.x, next.y));
-
-			//If the node is too close and more nodes remain, skip it. 
-			/*while (_path.Count > 1 && dist < Settings.PathfindingNodeDistance.Value)
-			{
-				_path.RemoveAt(0);
-				next = _path.First();
-				dist = Vector2.Distance(GameController.Player.GridPos, new Vector2(next.x, next.y));
-			}*/
-
-			//Get valid mouse position for hover
-			var cameraPos = GridToValidScreenPos(new Vector2(next.x, next.y));
-
-			Graphics.DrawText($"Pathfinding Target: {cameraPos} Distance: {dist} Path Node Count: {_path.Count}", new Vector2(100, 200));
-			Mouse.SetCursorPosHuman2(cameraPos);
-			if (DateTime.Now > _lastMovementKey.AddMilliseconds(50 + random.Next(30)))
-			{
-				Input.KeyPress(Settings.MovementKey);
-				System.Threading.Thread.Sleep(random.Next(20) + 20);
-				Input.KeyPressRelease(Settings.MovementKey);
-				_lastMovementKey = DateTime.Now;
-			}
-
-			if (dist < Settings.PathfindingNodeDistance.Value)
-				_path.RemoveAt(0);
-
-			//Clean up finished path
-			if (_path.Count == 0)
-			{
-				Input.KeyUp(Settings.MovementKey);
-				_path = null;
-
-				//Handle targeting transition point (do not return to pathfinding)
 			}
 		}
 
