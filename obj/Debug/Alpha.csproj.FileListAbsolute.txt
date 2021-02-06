@@ -1,0 +1,8 @@
+C:\Users\Chris\Documents\GitHub\PoeHelper\Plugins\Compiled\Terrain\Alpha.dll
+C:\Users\Chris\Documents\GitHub\PoeHelper\Plugins\Compiled\Terrain\Alpha.pdb
+C:\Users\Chris\Documents\GitHub\Exile\ExileApi\Plugins\Alpha\obj\Debug\Alpha.csprojAssemblyReference.cache
+C:\Users\Chris\Documents\GitHub\Exile\ExileApi\Plugins\Alpha\obj\Debug\Alpha.dll
+C:\Users\Chris\Documents\GitHub\Exile\ExileApi\Plugins\Alpha\obj\Debug\Alpha.pdb
+C:\Users\Chris\Documents\GitHub\Exile\PoeHelper\Plugins\Compiled\Alpha\Alpha.dll
+C:\Users\Chris\Documents\GitHub\Exile\PoeHelper\Plugins\Compiled\Alpha\Alpha.pdb
+C:\Users\Chris\Documents\GitHub\Exile\ExileApi\Plugins\Alpha\obj\Debug\Alpha.csproj.CopyComplete
