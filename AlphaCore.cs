@@ -27,18 +27,11 @@ namespace Alpha
 	/// </summary>
 	internal class AlphaCore : BaseSettingsPlugin<AlphaSettings>
 	{
-		private int _numRows, _numCols;
-		private StaticGrid _mapGrid;
 		private Camera Camera => GameController.Game.IngameState.Camera;		
-		private List<GridPos> _path = null;
-		private Dictionary<string, Vector2> _areaTransitions = new Dictionary<string, Vector2>();
-
-
+		private Dictionary<string, Vector3> _areaTransitions = new Dictionary<string, Vector3>();
 		private Random random = new Random();
-
-
-		private List<Vector2> _targetPositions = new List<Vector2>();
-		private Vector2 _lastTargetPosition;
+		private List<Vector3> _targetPositions = new List<Vector3>();
+		private Vector3 _lastTargetPosition;
 		private Entity _followTarget;
 
 		private DateTime _nextBotAction = DateTime.Now;
@@ -55,8 +48,6 @@ namespace Alpha
 			Input.RegisterKey(Settings.ToggleFollower.Value);
 			Settings.ToggleFollower.OnValueChanged += () => { Input.RegisterKey(Settings.ToggleFollower.Value); };
 
-			Input.RegisterKey(Settings.FindPath.Value);
-			Settings.FindPath.OnValueChanged += () => { Input.RegisterKey(Settings.FindPath.Value); };
 			return base.Initialise();
 		}
 
@@ -66,61 +57,16 @@ namespace Alpha
 		/// </summary>
 		private void ResetPathing()
 		{
-			_targetPositions = new List<Vector2>();
+			_targetPositions = new List<Vector3>();
 			_followTarget = null;
-			_path = null;
-			_lastTargetPosition = Vector2.Zero;
+			_lastTargetPosition = Vector3.Zero;
+			_areaTransitions = new Dictionary<string, Vector3>();
 		}
 
 		public override void AreaChange(AreaInstance area)
 		{
 			ResetPathing();
-			_areaTransitions = new Dictionary<string, Vector2>();
-			var terrain = GameController.IngameState.Data.Terrain;
-			var terrainBytes = GameController.Memory.ReadBytes(terrain.LayerMelee.First, terrain.LayerMelee.Size);
-			_numCols = (int)(terrain.NumCols - 1) * 23;
-			_numRows = (int)(terrain.NumRows - 1) * 23;
-			if ((_numCols & 1) > 0)
-				_numCols++;
-
-			_mapGrid = new StaticGrid(_numCols, _numRows);
-			int dataIndex = 0;
-			for (int y = 0; y < _numRows; y++)
-			{
-				for (int x = 0; x < _numCols; x += 2)
-				{
-					var b = terrainBytes[dataIndex + (x >> 1)];
-					_mapGrid.SetWalkableAt(x, y, (b & 0xf) > 0);
-					_mapGrid.SetWalkableAt(x+1, y, (b >> 4) > 0);
-				}
-				dataIndex += terrain.BytesPerRow;
-			}
-			//GeneratePNG();
 		}
-
-
-		public void GeneratePNG()
-		{
-			using (var img = new Bitmap(_numRows, _numCols))
-			{
-				for (int x = 0; x < _numRows; x++)
-					for (int y = 0; y < _numCols; y++)
-						img.SetPixel(x, y, _mapGrid.IsWalkableAt(x, y) ? System.Drawing.Color.White : System.Drawing.Color.Black);
-
-				foreach (var pos in _areaTransitions.Values)
-				{
-					for (var x = (int)pos.X - 2; x < pos.X + 2; x++)
-						for (var y = (int)pos.Y - 2; y < pos.Y + 2; y++)
-							img.SetPixel(x, y, System.Drawing.Color.Red);
-				}
-				for (var x = (int)GameController.Player.GridPos.X - 2; x < GameController.Player.GridPos.X + 2; x++)
-					for (var y = (int)GameController.Player.GridPos.Y - 2; y < GameController.Player.GridPos.Y + 2; y++)
-						img.SetPixel(x, y, System.Drawing.Color.Blue);
-
-				img.Save("output.png");
-			}
-		}
-
 		public override Job Tick()
 		{
 			if (Settings.ToggleFollower.PressedOnce())			
@@ -135,20 +81,20 @@ namespace Alpha
 
 			if(_followTarget != null)
 			{
-				if(GameController.Player.GridPos.Distance(_followTarget.GridPos) >= Settings.ClearPathDistance.Value)
+				if( Vector3.Distance(GameController.Player.Pos,_followTarget.Pos) >= Settings.ClearPathDistance.Value)
 				{
 
-					if (_targetPositions.Count > 0 && _targetPositions.Last().Distance(_followTarget.GridPos) > Settings.PathfindingNodeDistance)
-						_targetPositions.Add(_followTarget.GridPos);
+					if (_targetPositions.Count > 0 && Vector3.Distance(_targetPositions.Last(),_followTarget.Pos) > Settings.PathfindingNodeDistance)
+						_targetPositions.Add(_followTarget.Pos);
 					else if(_targetPositions.Count == 0)
-						_targetPositions.Add(_followTarget.GridPos);
+						_targetPositions.Add(_followTarget.Pos);
 				}
 
 				//If we're already close to the target, clear our path. 
-				if(GameController.Player.GridPos.Distance(_followTarget.GridPos) <= Settings.ClearPathDistance)				
-					_targetPositions = new List<Vector2>();
+				if (Vector3.Distance(GameController.Player.Pos,_followTarget.Pos) <= Settings.ClearPathDistance)				
+					_targetPositions = new List<Vector3>();
 				
-				_lastTargetPosition = _followTarget.GridPos;
+				_lastTargetPosition = _followTarget.Pos;
 			}
 
 			//Check last movement input time
@@ -158,7 +104,7 @@ namespace Alpha
 				while (_targetPositions.Count > 1)
 				{
 					//Skip any paths that are too close to us. 
-					if (GameController.Player.GridPos.Distance(_targetPositions[0]) < Settings.PathfindingNodeDistance)
+					if (Vector3.Distance(GameController.Player.Pos,_targetPositions[0]) < Settings.PathfindingNodeDistance)
 						_targetPositions.RemoveAt(0);
 					else
 						break;
@@ -169,25 +115,25 @@ namespace Alpha
 				{
 					_nextBotAction = DateTime.Now.AddMilliseconds(Settings.BotInputFrequency / 2 + random.Next(Settings.BotInputFrequency / 2));
 					var next = _targetPositions[0];
-					var cameraPos = GridToValidScreenPos(next);
+					var cameraPos = WorldToValidScreenPosition(next);
 					Mouse.SetCursorPosHuman2(cameraPos);
 					System.Threading.Thread.Sleep(random.Next(25) + 30);
 					Input.KeyDown(Settings.MovementKey);
 					System.Threading.Thread.Sleep(random.Next(25) + 30);
 					Input.KeyUp(Settings.MovementKey);
 
-					if (GameController.Player.GridPos.Distance(next) < Settings.PathfindingNodeDistance)
+					if (Vector3.Distance(GameController.Player.Pos,next) < Settings.PathfindingNodeDistance)
 						_targetPositions.RemoveAt(0);
 				}
 				else if (_followTarget == null &&
 					_areaTransitions.Count > 0 &&
-					_lastTargetPosition != Vector2.Zero)
+					_lastTargetPosition != Vector3.Zero)
 				{
 					_nextBotAction = DateTime.Now.AddMilliseconds(Settings.BotInputFrequency * 5 + random.Next(Settings.BotInputFrequency * 5));
 					//Check if we're too far away from the transition. If os move towards last known first. 
-					if (_lastTargetPosition.Distance(GameController.Player.GridPos) > Settings.ClearPathDistance)
+					if (Vector3.Distance(_lastTargetPosition,GameController.Player.Pos) > Settings.ClearPathDistance)
 					{
-						Mouse.SetCursorPosHuman2(GridToValidScreenPos(_lastTargetPosition));
+						Mouse.SetCursorPosHuman2(WorldToValidScreenPosition(_lastTargetPosition));
 						System.Threading.Thread.Sleep(random.Next(25) + 30);
 						Input.KeyDown(Settings.MovementKey);
 						System.Threading.Thread.Sleep(random.Next(25) + 30);
@@ -195,11 +141,11 @@ namespace Alpha
 					}
 					else
 					{
-						var transitionTarget = _areaTransitions.Values.OrderBy(I => I.Distance(GameController.Player.GridPos)).FirstOrDefault();
-						if (transitionTarget.Distance(_lastTargetPosition) <= Settings.ClearPathDistance)
+						var transitionTarget = _areaTransitions.Values.OrderBy(I => Vector3.Distance(I, GameController.Player.Pos)).FirstOrDefault();
+						if (Vector3.Distance(transitionTarget,_lastTargetPosition) <= Settings.ClearPathDistance)
 						{
 							Input.KeyUp(Settings.MovementKey);
-							Mouse.SetCursorPosAndLeftClickHuman(GridToValidScreenPos(transitionTarget), 100);
+							Mouse.SetCursorPosAndLeftClickHuman(WorldToValidScreenPosition(transitionTarget), 100);
 							_nextBotAction = DateTime.Now.AddSeconds(1);
 						}
 					}
@@ -240,7 +186,7 @@ namespace Alpha
 					case ExileCore.Shared.Enums.EntityType.TownPortal:
 						if (!_areaTransitions.ContainsKey(entity.RenderName))
 						{
-							_areaTransitions.Add(entity.RenderName, entity.GridPos);
+							_areaTransitions.Add(entity.RenderName, entity.Pos);
 							
 						}
 						break;
@@ -251,34 +197,30 @@ namespace Alpha
 
 		public override void Render()
 		{
-			if (_path != null && _path.Count > 1)
-				for (var i = 1; i < _path.Count; i++)
+			if (_targetPositions != null && _targetPositions.Count > 1)
+				for (var i = 1; i < _targetPositions.Count; i++)
 				{
-					var start = GridToScreen(new Vector2(_path[i - 1].x, _path[i - 1].y));
-					var end = GridToScreen(new Vector2(_path[i].x, _path[i].y));
+					var start = WorldToValidScreenPosition( _targetPositions[i - 1]);
+					var end = WorldToValidScreenPosition(_targetPositions[i]);
 					Graphics.DrawLine(start, end, 2, SharpDX.Color.Pink);
 				}
-			Graphics.DrawText($"Follow Enabled: {Settings.IsFollowEnabled.Value}", new Vector2(500, 20));
-			Graphics.DrawText($"Pathing Waypoints: {_targetPositions.Count}", new Vector2(500, 40));
+			var dist = _targetPositions.Count > 0 ? Vector3.Distance(GameController.Player.Pos,_targetPositions.First()): 0;
+			var targetDist = _lastTargetPosition == null ? "NA" : Vector3.Distance(GameController.Player.Pos, _lastTargetPosition).ToString();
+			Graphics.DrawText($"Follow Enabled: {Settings.IsFollowEnabled.Value}", new Vector2(500, 120));
+			Graphics.DrawText($"Pathing Waypoints: {_targetPositions.Count} Next WP Distance: {dist} Target Distance: {targetDist}", new Vector2(500, 140));
 			var counter = 0;
 			foreach (var transition in _areaTransitions)
 			{
 				counter++;
-				Graphics.DrawText($"{transition.Key} at { transition.Value.X} { transition.Value.Y}", new Vector2(100, 20 + counter * 20));
+				Graphics.DrawText($"{transition.Key} at { transition.Value.X} { transition.Value.Y}", new Vector2(100, 120 + counter * 20));
 			}
 		}
 
-		private Vector2 GridToScreen(Vector2 gridPos)
-		{
-			var worldPos = PoeMapExtension.GridToWorld(gridPos);
-			return Camera.WorldToScreen(new Vector3(worldPos.X, worldPos.Y, 0));
-		}
 
-		private Vector2 GridToValidScreenPos(Vector2 gridPos)
+		private Vector2 WorldToValidScreenPosition(Vector3 worldPos)
 		{
-			var worldPos = PoeMapExtension.GridToWorld(gridPos);
-			var cameraPos = GridToScreen(gridPos);
-
+			var cameraPos = Camera.WorldToScreen(worldPos);
+			
 			//Clamp to inner section of screen. 
 			var window = GameController.Window.GetWindowRectangle();
 
@@ -288,7 +230,6 @@ namespace Alpha
 				MathUtil.Clamp(cameraPos.Y, bounds.Y, window.Height - bounds.Y));
 
 			return cameraPos;
-
 		}
 	}
 }
