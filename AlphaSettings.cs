@@ -12,6 +12,7 @@ namespace Alpha
 		{
 			PathfindingNodeDistance = new RangeNode<int>(20, 1, 50);
 			CalculatePathFrequency = new RangeNode<int>(3000, 1000, 10000);
+			FollowTarget = new TextNode("NONE");
 		}
 
 		public ToggleNode Enable { get; set; } = new ToggleNode(false);
