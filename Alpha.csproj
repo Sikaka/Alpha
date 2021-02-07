@@ -74,6 +74,8 @@
     <Compile Include="Mouse.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="AlphaSettings.cs" />
+    <Compile Include="TaskNode.cs" />
+    <Compile Include="TaskNodeType.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Core\Core.csproj">
