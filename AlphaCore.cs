@@ -81,12 +81,35 @@ namespace Alpha
 			}
 		}
 
+		private void MouseoverItem(Entity item)
+		{
+			//This will run in the background. Do not perform any action for the next X ms
+			var baseScreenPos = Camera.WorldToScreen(item.Pos);
+
+			//Check if position is on screen...
+
+			//Random mouse movements
+			for(var i = 0; i < 25; i++)
+			{
+				Mouse.SetCursorPos(new Vector2(
+					baseScreenPos.X + random.Next(-i * 10, i * 10),
+					baseScreenPos.Y + random.Next(-i * 10, i * 10)));
+				Thread.Sleep(15 + random.Next(15));
+				var targetData = item.GetComponent<Targetable>();
+				if (targetData.isTargeted)
+				{
+					_nextBotAction = DateTime.Now;
+					break;
+				}
+			}
+		}
+
 		public override Job Tick()
 		{
 			if (Settings.ToggleFollower.PressedOnce())
 			{
 				Settings.IsFollowEnabled.SetValueNoEvent(!Settings.IsFollowEnabled.Value);
-				_tasks = new List<TaskNode>();
+				_tasks = new List<TaskNode>();				
 			}
 
 			if (!Settings.IsFollowEnabled.Value)
@@ -103,7 +126,7 @@ namespace Alpha
 				{
 					//Leader moved VERY far in one frame. Check for transition to use to follow them.
 					var distanceMoved = Vector3.Distance(_lastTargetPosition, _followTarget.Pos);
-					if (_lastTargetPosition != Vector3.Zero &&  distanceMoved > Settings.ClearPathDistance.Value)
+					if (_lastTargetPosition != Vector3.Zero && distanceMoved > Settings.ClearPathDistance.Value)
 					{
 						var transition = _areaTransitions.Values.OrderBy(I => Vector3.Distance(_lastTargetPosition, I)).FirstOrDefault();
 						var dist = Vector3.Distance(_lastTargetPosition, transition);
@@ -124,18 +147,19 @@ namespace Alpha
 				else
 				{
 					//Clear all tasks except for looting/claim portal (as those only get done when we're within range of leader. 
-					if(_tasks.Count > 0)					
-						for(var i = _tasks.Count - 1; i >=0; i--)
-							if(_tasks[i].Type == TaskNodeType.Movement || _tasks[i].Type == TaskNodeType.Transition)							
+					if (_tasks.Count > 0)
+						for (var i = _tasks.Count - 1; i >= 0; i--)
+							if (_tasks[i].Type == TaskNodeType.Movement || _tasks[i].Type == TaskNodeType.Transition)
 								_tasks.RemoveAt(i);
 
-					/*
+
 					//Check if we should add quest loot logic. We're close to leader already
 					var questLoot = GetLootableQuestItem();
 					if (questLoot != null &&
-						Vector3.Distance(GameController.Player.Pos, questLoot.Pos) < Settings.ClearPathDistance.Value)
+						Vector3.Distance(GameController.Player.Pos, questLoot.Pos) < Settings.ClearPathDistance.Value &&
+						_tasks.FirstOrDefault(I => I.Type == TaskNodeType.Loot) == null)
 						_tasks.Add(new TaskNode(questLoot.Pos, Settings.ClearPathDistance, TaskNodeType.Loot));
-						*/
+
 				}
 				_lastTargetPosition = _followTarget.Pos;
 			}
@@ -189,15 +213,27 @@ namespace Alpha
 						{
 							currentTask.AttemptCount++;
 							var questLoot = GetLootableQuestItem();
-							if (questLoot == null 
+							if (questLoot == null
 								|| currentTask.AttemptCount > 2
 								|| Vector3.Distance(GameController.Player.Pos, questLoot.Pos) >= Settings.ClearPathDistance.Value)
 								_tasks.RemoveAt(0);
 
 							Input.KeyUp(Settings.MovementKey);
-							HoverToEntityAction(questLoot);
-							Mouse.LeftClick();
-							_nextBotAction = DateTime.Now.AddMilliseconds(500 + random.Next(Settings.BotInputFrequency.Value));
+
+							var targetInfo = questLoot.GetComponent<Targetable>();
+							if (targetInfo.isTargeted)
+							{
+								Thread.Sleep(25);
+								Mouse.LeftMouseDown();
+								Thread.Sleep(25 + random.Next(Settings.BotInputFrequency));
+								Mouse.LeftMouseUp();
+								_nextBotAction = DateTime.Now.AddSeconds(1);
+							}
+							else
+							{
+								new System.Threading.Tasks.Task(() => { MouseoverItem(questLoot); }).Start();
+								_nextBotAction = DateTime.Now.AddSeconds(5);
+							}
 							break;
 						}
 					case TaskNodeType.Transition:
@@ -246,104 +282,6 @@ namespace Alpha
 				return null;
 			}
 		}
-		private bool HoverToEntityAction(Entity entity)
-		{
-			Random rnd = new Random();
-			int offsetValue = 10;
-
-			// Matrix of offsets as vectors. Try each offset and see whether the entity's isTargeted is true
-			List<Vector2> offsets = new List<Vector2>();
-
-			foreach (int yOffset in Enumerable.Range(-5, 5))
-				foreach (int xOffset in Enumerable.Range(-5, 5))
-					offsets.Add(new Vector2(xOffset * offsetValue, yOffset * offsetValue));
-
-			bool targeted = false;
-
-			HoverTo(entity);
-
-			while (offsets.Any())
-			{
-				if (entity.GetComponent<Targetable>().isTargeted)
-				{
-					targeted = true;
-					break;
-				}
-
-				// If entity is not present anymore (e.g. map portal is used by another player) stop hovering
-				if (!IsEntityPresent(entity.Id)) break;
-
-				int elem = rnd.Next(offsets.Count);
-				Vector2 offset = offsets[elem];
-				offsets.Remove(offset);
-
-				HoverTo(entity, (int)offset.X, (int)offset.Y);
-				Thread.Sleep(50);
-			}
-
-			Thread.Sleep(50);
-
-			return targeted;
-		}
-		private void HoverTo(Entity entity, int xOffset = 0, int yOffset = 0)
-		{
-			//LogMsgWithVerboseDebug("HoverTo called");
-
-			if (entity == null) return;
-
-			Camera camera = GameController.Game.IngameState.Camera;
-			Vector2 windowOffset = GameController.Window.GetWindowRectangle().TopLeft;
-
-			Vector2 result = camera.WorldToScreen(entity.Pos);
-
-			int randomXOffset = new Random().Next(0, Settings.RandomClickOffset.Value);
-			int randomYOffset = new Random().Next(0, Settings.RandomClickOffset.Value);
-
-			Vector2 finalPos = new Vector2(
-				result.X + randomXOffset + xOffset + windowOffset.X,
-				result.Y + randomYOffset + yOffset + windowOffset.Y);
-
-			bool intersects =
-				GameController.Window.GetWindowRectangleTimeCache.Intersects(new RectangleF(finalPos.X, finalPos.Y, 3,
-					3));
-			// The entity is inside the game window and visible, we can just hover
-			if (intersects)
-			{
-				Mouse.SetCursorPosHuman2(finalPos);
-				return;
-			}
-
-			// The entity is outside of the visibility. Make some calculations to click within the game window borders
-			int smallOffset = 5;
-
-			float topLeftX = GameController.Window.GetWindowRectangle().TopLeft.X;
-			float topLeftY = GameController.Window.GetWindowRectangle().TopLeft.Y;
-			float bottomRightX = GameController.Window.GetWindowRectangle().BottomRight.X;
-			float bottomRightY = GameController.Window.GetWindowRectangle().BottomRight.Y;
-
-			if (finalPos.X < topLeftX) finalPos.X = topLeftX + smallOffset;
-			if (finalPos.Y < topLeftY) finalPos.Y = topLeftY + smallOffset;
-			if (finalPos.X > bottomRightX) finalPos.X = bottomRightX - smallOffset;
-
-			if (finalPos.Y > bottomRightY) finalPos.Y = bottomRightY - smallOffset;
-
-			Mouse.SetCursorPosHuman2(finalPos);
-		}
-
-		private bool IsEntityPresent(uint entityId)
-		{
-			bool isEntityPresent = false;
-			try
-			{
-				isEntityPresent = GameController.Entities.Any(e => e.Id == entityId);
-			}
-			catch
-			{
-			}
-
-			return isEntityPresent;
-		}
-
 
 		private Entity GetLootableQuestItem()
 		{
