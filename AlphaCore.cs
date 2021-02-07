@@ -101,14 +101,8 @@ namespace Alpha
 			if (DateTime.Now > _nextBotAction)
 			{
 				//Check if any paths remain. 
-				while (_targetPositions.Count > 1)
-				{
-					//Skip any paths that are too close to us. 
-					if (Vector3.Distance(GameController.Player.Pos,_targetPositions[0]) < Settings.PathfindingNodeDistance)
-						_targetPositions.RemoveAt(0);
-					else
-						break;
-				}
+				if (_targetPositions.Count > 1 &&Vector3.Distance(GameController.Player.Pos,_targetPositions[0]) < Settings.PathfindingNodeDistance)
+					_targetPositions.RemoveAt(0);
 
 				//Check if we have a path remaining
 				if (_targetPositions.Count > 0)
@@ -125,6 +119,7 @@ namespace Alpha
 					if (Vector3.Distance(GameController.Player.Pos,next) < Settings.PathfindingNodeDistance)
 						_targetPositions.RemoveAt(0);
 				}
+
 				else if (_followTarget == null &&
 					_areaTransitions.Count > 0 &&
 					_lastTargetPosition != Vector3.Zero)
@@ -149,7 +144,7 @@ namespace Alpha
 							_nextBotAction = DateTime.Now.AddSeconds(1);
 						}
 					}
-				}
+				}				
 			}
 
 			return null;
