@@ -14,6 +14,7 @@ using System.Linq;
 using ExileCore.Shared.Helpers;
 using System.IO;
 using System.Threading;
+using System.Drawing;
 
 namespace Alpha
 {
@@ -38,6 +39,8 @@ namespace Alpha
 		private List<TaskNode> _tasks = new List<TaskNode>();
 		private DateTime _nextBotAction = DateTime.Now;
 
+		private int _numRows, _numCols;
+		private byte[,] _tiles;
 		public AlphaCore()
 		{
 			Name = "Alpha";
@@ -79,28 +82,98 @@ namespace Alpha
 				if(!_areaTransitions.ContainsKey(transition.Id))
 					_areaTransitions.Add(transition.Id, transition.Pos);
 			}
+
+
+			var terrain = GameController.IngameState.Data.Terrain;
+			var terrainBytes = GameController.Memory.ReadBytes(terrain.LayerMelee.First, terrain.LayerMelee.Size);
+			_numCols = (int)(terrain.NumCols - 1) * 23;
+			_numRows = (int)(terrain.NumRows - 1) * 23;
+			if ((_numCols & 1) > 0)
+				_numCols++;
+
+			_tiles = new byte[_numCols, _numRows];
+			int dataIndex = 0;
+			for (int y = 0; y < _numRows; y++)
+			{
+				for (int x = 0; x < _numCols; x += 2)
+				{
+					var b = terrainBytes[dataIndex + (x >> 1)];
+					_tiles[x, y] = (byte)((b & 0xf) > 0 ? 1 : 255);
+					_tiles[x+1, y] = (byte)((b >> 4) > 0 ? 1 : 255);
+				}
+				dataIndex += terrain.BytesPerRow;
+			}
+
+			terrainBytes = GameController.Memory.ReadBytes(terrain.LayerRanged.First, terrain.LayerRanged.Size);
+			_numCols = (int)(terrain.NumCols - 1) * 23;
+			_numRows = (int)(terrain.NumRows - 1) * 23;
+			if ((_numCols & 1) > 0)
+				_numCols++;
+			dataIndex = 0;
+			for (int y = 0; y < _numRows; y++)
+			{
+				for (int x = 0; x < _numCols; x += 2)
+				{
+					var b = terrainBytes[dataIndex + (x >> 1)];
+
+					var current = _tiles[x, y];
+					if(current == 255)
+						_tiles[x, y] = (byte)((b & 0xf) > 3 ? 2 : 255);
+					current = _tiles[x+1, y];
+					if (current == 255)
+						_tiles[x + 1, y] = (byte)((b >> 4) > 3 ? 2 : 255);
+				}
+				dataIndex += terrain.BytesPerRow;
+			}
+
+
+			GeneratePNG();
 		}
+
+		public void GeneratePNG()
+		{
+			using (var img = new Bitmap(_numCols,_numRows))
+			{
+				for (int x = 0; x < _numCols; x++)
+					for (int y = 0; y < _numRows; y++)
+					{
+						try
+						{
+							var color = System.Drawing.Color.Black;
+							switch (_tiles[x, y])
+							{
+								case 1:
+									color = System.Drawing.Color.White;
+									break;
+								case 2:
+									color = System.Drawing.Color.Gray;
+									break;
+								case 255:
+									color = System.Drawing.Color.Black;
+									break;
+							}
+							img.SetPixel(x, y, color);
+						}
+						catch (Exception e)
+						{
+							Console.WriteLine(e);
+						}
+					}
+				img.Save("output.png");
+			}
+		}
+
 
 		private void MouseoverItem(Entity item)
 		{
-			//This will run in the background. Do not perform any action for the next X ms
-			var baseScreenPos = Camera.WorldToScreen(item.Pos);
-
-			//Check if position is on screen...
-
-			//Random mouse movements
-			for(var i = 0; i < 25; i++)
+			var uiLoot = GameController.IngameState.IngameUi.ItemsOnGroundLabels.FirstOrDefault(I => I.IsVisible && I.ItemOnGround.Id == item.Id);
+			if (uiLoot != null)
 			{
+				var clickPos = uiLoot.Label.GetClientRect().Center;
 				Mouse.SetCursorPos(new Vector2(
-					baseScreenPos.X + random.Next(-i * 10, i * 10),
-					baseScreenPos.Y + random.Next(-i * 10, i * 10)));
-				Thread.Sleep(15 + random.Next(15));
-				var targetData = item.GetComponent<Targetable>();
-				if (targetData.isTargeted)
-				{
-					_nextBotAction = DateTime.Now;
-					break;
-				}
+					clickPos.X + random.Next(-15, 15),
+					clickPos.Y + random.Next(-10, 10)));
+				Thread.Sleep(30 + random.Next(Settings.BotInputFrequency));				
 			}
 		}
 
@@ -199,6 +272,10 @@ namespace Alpha
 				{
 					case TaskNodeType.Movement:
 						_nextBotAction = DateTime.Now.AddMilliseconds(Settings.BotInputFrequency + random.Next(Settings.BotInputFrequency));
+
+						if (Settings.IsDashEnabled && CheckDashTerrain(currentTask.WorldPosition.WorldToGrid()))
+							return null;
+
 						Mouse.SetCursorPosHuman2(WorldToValidScreenPosition(currentTask.WorldPosition));
 						Thread.Sleep(random.Next(25) + 30);
 						Input.KeyDown(Settings.MovementKey);
@@ -211,6 +288,7 @@ namespace Alpha
 						break;
 					case TaskNodeType.Loot:
 						{
+							_nextBotAction = DateTime.Now.AddMilliseconds(Settings.BotInputFrequency + random.Next(Settings.BotInputFrequency));
 							currentTask.AttemptCount++;
 							var questLoot = GetLootableQuestItem();
 							if (questLoot == null
@@ -219,8 +297,11 @@ namespace Alpha
 								_tasks.RemoveAt(0);
 
 							Input.KeyUp(Settings.MovementKey);
-
+							Thread.Sleep(Settings.BotInputFrequency);
+							//Pause for long enough for movement to hopefully be finished.
 							var targetInfo = questLoot.GetComponent<Targetable>();
+							if (!targetInfo.isTargeted)
+								MouseoverItem(questLoot);
 							if (targetInfo.isTargeted)
 							{
 								Thread.Sleep(25);
@@ -229,11 +310,7 @@ namespace Alpha
 								Mouse.LeftMouseUp();
 								_nextBotAction = DateTime.Now.AddSeconds(1);
 							}
-							else
-							{
-								new System.Threading.Tasks.Task(() => { MouseoverItem(questLoot); }).Start();
-								_nextBotAction = DateTime.Now.AddSeconds(5);
-							}
+
 							break;
 						}
 					case TaskNodeType.Transition:
@@ -265,6 +342,73 @@ namespace Alpha
 			}
 			_lastPlayerPosition = GameController.Player.Pos;
 			return null;
+		}
+
+		private bool CheckDashTerrain(Vector2 targetPosition)
+		{		
+
+			//TODO: Completely re-write this garbage. 
+			//It's not taking into account a lot of stuff, horribly inefficient and just not the right way to do this.
+			//Calculate the straight path from us to the target (this would be waypoints normally)
+			var distance = GameController.Player.GridPos.Distance(targetPosition);
+			var dir = targetPosition - GameController.Player.GridPos;
+			dir.Normalize();
+
+			var distanceBeforeWall = 0;
+			var distanceInWall = 0;
+
+			var shouldDash = false;
+			var points = new List<System.Drawing.Point>();
+			for (var i = 0; i < 500; i++)
+			{
+				var v2Point = GameController.Player.GridPos + i * dir;
+				var point = new System.Drawing.Point((int)(GameController.Player.GridPos.X + i * dir.X),
+					(int)(GameController.Player.GridPos.Y + i * dir.Y));
+
+				if (points.Contains(point))
+					continue;
+				if (v2Point.Distance(targetPosition) < 2)
+					break;
+
+				points.Add(point);
+				var tile = _tiles[point.X, point.Y];
+
+
+				//Invalid tile: Block dash
+				if (tile == 255)
+				{
+					shouldDash = false;
+					break;
+				}
+				else if (tile == 2)
+				{
+					if (shouldDash)
+						distanceInWall++;
+					shouldDash = true;
+				}
+				else if (!shouldDash)
+				{
+					distanceBeforeWall++;
+					if (distanceBeforeWall > 10)					
+						break;					
+				}
+			}
+
+			if (distanceBeforeWall > 10 || distanceInWall < 5)
+				shouldDash = false;
+
+			if (shouldDash)
+			{
+				_nextBotAction = DateTime.Now.AddMilliseconds(500 + random.Next(Settings.BotInputFrequency));
+				Mouse.SetCursorPos(WorldToValidScreenPosition(targetPosition.GridToWorld(_followTarget == null ? GameController.Player.Pos.Z : _followTarget.Pos.Z)));
+				Thread.Sleep(50 + random.Next(Settings.BotInputFrequency));
+				Input.KeyDown(Settings.DashKey);
+				Thread.Sleep(15 + random.Next(Settings.BotInputFrequency));
+				Input.KeyUp(Settings.DashKey);
+				return true;
+			}
+
+			return false;
 		}
 
 		private Entity GetFollowingTarget()

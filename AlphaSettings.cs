@@ -17,6 +17,8 @@ namespace Alpha
 		[Menu("Random Click Offset")] public RangeNode<int> RandomClickOffset { get; set; } = new RangeNode<int>(10, 1, 100);
 		[Menu("Follow Target Name")] public TextNode LeaderName { get; set; } = new TextNode("");
 		[Menu("Movement Key")] public HotkeyNode MovementKey { get; set; } = Keys.T;
+		[Menu("Allow Dash")] public ToggleNode IsDashEnabled { get; set; } = new ToggleNode(true);
+		[Menu("Dash Key")] public HotkeyNode DashKey { get; set; } = Keys.W;
 
 	}
 }
