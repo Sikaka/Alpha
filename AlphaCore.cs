@@ -11,7 +11,6 @@ using System.Collections.Generic;
 using Map = ExileCore.PoEMemory.Elements.Map;
 using EpPathFinding.cs;
 using System.Linq;
-using ExileCore.Shared.Helpers;
 using System.IO;
 using System.Threading;
 using System.Drawing;
