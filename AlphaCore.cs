@@ -35,6 +35,8 @@ namespace Alpha
 		private Vector3 _lastPlayerPosition;
 		private Entity _followTarget;
 
+		private bool _hasUsedWP = false;
+
 
 		private List<TaskNode> _tasks = new List<TaskNode>();
 		private DateTime _nextBotAction = DateTime.Now;
@@ -67,6 +69,7 @@ namespace Alpha
 			_lastTargetPosition = Vector3.Zero;
 			_lastPlayerPosition = Vector3.Zero;
 			_areaTransitions = new Dictionary<uint, Vector3>();
+			_hasUsedWP = false;
 		}
 
 		public override void AreaChange(AreaInstance area)
@@ -233,6 +236,20 @@ namespace Alpha
 						_tasks.FirstOrDefault(I => I.Type == TaskNodeType.Loot) == null)
 						_tasks.Add(new TaskNode(questLoot.Pos, Settings.ClearPathDistance, TaskNodeType.Loot));
 
+					else if(!_hasUsedWP)
+					{
+						//Check if there's a waypoint nearby
+						var waypoint = GameController.EntityListWrapper.Entities.SingleOrDefault(I => I.Type == ExileCore.Shared.Enums.EntityType.Waypoint &&
+							Vector3.Distance(GameController.Player.Pos, I.Pos) < Settings.ClearPathDistance);
+
+						if (waypoint != null) 
+						{
+							_hasUsedWP = true;
+							_tasks.Add(new TaskNode(waypoint.Pos, Settings.ClearPathDistance, TaskNodeType.ClaimWaypoint));
+						}
+
+					}
+
 				}
 				_lastTargetPosition = _followTarget.Pos;
 			}
@@ -332,7 +349,23 @@ namespace Alpha
 								Input.KeyDown(Settings.MovementKey);
 								Thread.Sleep(random.Next(25) + 30);
 								Input.KeyUp(Settings.MovementKey);
-							}							
+							}
+							currentTask.AttemptCount++;
+							if (currentTask.AttemptCount > 3)
+								_tasks.RemoveAt(0);
+							break;
+						}
+
+					case TaskNodeType.ClaimWaypoint:
+						{
+							if (Vector3.Distance(GameController.Player.Pos, currentTask.WorldPosition) > 150)
+							{
+								var screenPos = WorldToValidScreenPosition(currentTask.WorldPosition);
+								Input.KeyUp(Settings.MovementKey);
+								Thread.Sleep(Settings.BotInputFrequency);
+								Mouse.SetCursorPosAndLeftClickHuman(screenPos, 100);
+								_nextBotAction = DateTime.Now.AddSeconds(1);
+							}
 							currentTask.AttemptCount++;
 							if (currentTask.AttemptCount > 3)
 								_tasks.RemoveAt(0);
