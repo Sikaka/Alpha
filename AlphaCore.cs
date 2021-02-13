@@ -28,7 +28,7 @@ namespace Alpha
 	{
 		private Random random = new Random();
 		private Camera Camera => GameController.Game.IngameState.Camera;		
-		private Dictionary<uint, Vector3> _areaTransitions = new Dictionary<uint, Vector3>();
+		private Dictionary<uint, Entity> _areaTransitions = new Dictionary<uint, Entity>();
 		
 		private Vector3 _lastTargetPosition;
 		private Vector3 _lastPlayerPosition;
@@ -67,7 +67,7 @@ namespace Alpha
 			_followTarget = null;
 			_lastTargetPosition = Vector3.Zero;
 			_lastPlayerPosition = Vector3.Zero;
-			_areaTransitions = new Dictionary<uint, Vector3>();
+			_areaTransitions = new Dictionary<uint, Entity>();
 			_hasUsedWP = false;
 		}
 
@@ -82,7 +82,7 @@ namespace Alpha
 			 I.Type == ExileCore.Shared.Enums.EntityType.TownPortal).ToList())
 			{
 				if(!_areaTransitions.ContainsKey(transition.Id))
-					_areaTransitions.Add(transition.Id, transition.Pos);
+					_areaTransitions.Add(transition.Id, transition);
 			}
 
 
@@ -203,10 +203,10 @@ namespace Alpha
 					var distanceMoved = Vector3.Distance(_lastTargetPosition, _followTarget.Pos);
 					if (_lastTargetPosition != Vector3.Zero && distanceMoved > Settings.ClearPathDistance.Value)
 					{
-						var transition = _areaTransitions.Values.OrderBy(I => Vector3.Distance(_lastTargetPosition, I)).FirstOrDefault();
-						var dist = Vector3.Distance(_lastTargetPosition, transition);
-						if (Vector3.Distance(_lastTargetPosition, transition) < Settings.ClearPathDistance.Value)
-							_tasks.Add(new TaskNode(transition, 200, TaskNodeType.Transition));
+						var transition = _areaTransitions.Values.OrderBy(I => Vector3.Distance(_lastTargetPosition, I.Pos)).FirstOrDefault();
+						var dist = Vector3.Distance(_lastTargetPosition, transition.Pos);
+						if (Vector3.Distance(_lastTargetPosition, transition.Pos) < Settings.ClearPathDistance.Value)
+							_tasks.Add(new TaskNode(transition.Pos, 200, TaskNodeType.Transition));
 					}
 					//We have no path, set us to go to leader pos.
 					else if (_tasks.Count == 0)
@@ -257,9 +257,9 @@ namespace Alpha
 			else if (_tasks.Count == 0 &&
 				_lastTargetPosition != Vector3.Zero)
 			{
-				var transition = _areaTransitions.Values.OrderBy(I => Vector3.Distance(_lastTargetPosition, I)).FirstOrDefault();
-				if (Vector3.Distance(_lastTargetPosition, transition) < Settings.ClearPathDistance.Value)
-					_tasks.Add(new TaskNode(transition, Settings.PathfindingNodeDistance.Value, TaskNodeType.Transition));
+				var transition = _areaTransitions.Values.OrderBy(I => Vector3.Distance(_lastTargetPosition, I.Pos)).FirstOrDefault();
+				if (Vector3.Distance(_lastTargetPosition, transition.Pos) < Settings.ClearPathDistance.Value)
+					_tasks.Add(new TaskNode(transition.Pos, Settings.PathfindingNodeDistance.Value, TaskNodeType.Transition));
 			}
 
 
@@ -336,9 +336,9 @@ namespace Alpha
 							//re-cache transition in case the one used was removed: IE Map portals
 							if (currentTask.AttemptCount >1)
 							{
-								var toTransition = _areaTransitions.Values.OrderBy(I => Vector3.Distance(currentTask.WorldPosition, I)).FirstOrDefault();
-								if (toTransition != null && Vector3.Distance(currentTask.WorldPosition, toTransition) < Settings.ClearPathDistance)
-									currentTask.WorldPosition = toTransition;
+								var toTransition = _areaTransitions.Values.OrderBy(I => Vector3.Distance(currentTask.WorldPosition, I.Pos)).FirstOrDefault();
+								if (toTransition != null && Vector3.Distance(currentTask.WorldPosition, toTransition.Pos) < Settings.ClearPathDistance)
+									currentTask.WorldPosition = toTransition.Pos;
 							}
 							if (taskDistance <= Settings.ClearPathDistance.Value)
 							{
@@ -500,9 +500,7 @@ namespace Alpha
 					case ExileCore.Shared.Enums.EntityType.Portal:
 					case ExileCore.Shared.Enums.EntityType.TownPortal:
 						if (!_areaTransitions.ContainsKey(entity.Id))
-							_areaTransitions.Add(entity.Id, entity.Pos);
-						else
-							_areaTransitions[entity.Id] = entity.Pos;
+							_areaTransitions.Add(entity.Id, entity);
 						break;
 				}
 			base.EntityAdded(entity);
@@ -526,7 +524,7 @@ namespace Alpha
 			foreach (var transition in _areaTransitions)
 			{
 				counter++;
-				Graphics.DrawText($"{transition.Key} at { transition.Value.X} { transition.Value.Y}", new Vector2(100, 120 + counter * 20));
+				Graphics.DrawText($"{transition.Key} at { transition.Value.Pos.X} { transition.Value.Pos.Y}", new Vector2(100, 120 + counter * 20));
 			}
 		}
 
