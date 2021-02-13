@@ -11,7 +11,6 @@ using System.Collections.Generic;
 using Map = ExileCore.PoEMemory.Elements.Map;
 using EpPathFinding.cs;
 using System.Linq;
-using ExileCore.Shared.Helpers;
 using System.IO;
 using System.Threading;
 using System.Drawing;
@@ -390,7 +389,7 @@ namespace Alpha
 			//TODO: Completely re-write this garbage. 
 			//It's not taking into account a lot of stuff, horribly inefficient and just not the right way to do this.
 			//Calculate the straight path from us to the target (this would be waypoints normally)
-			var distance = GameController.Player.GridPos.Distance(targetPosition);
+			var distance = Vector2.Distance(GameController.Player.GridPos,targetPosition);
 			var dir = targetPosition - GameController.Player.GridPos;
 			dir.Normalize();
 
@@ -407,7 +406,7 @@ namespace Alpha
 
 				if (points.Contains(point))
 					continue;
-				if (v2Point.Distance(targetPosition) < 2)
+				if (Vector2.Distance(v2Point,targetPosition) < 2)
 					break;
 
 				points.Add(point);
