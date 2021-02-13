@@ -235,13 +235,13 @@ namespace Alpha
 						_tasks.FirstOrDefault(I => I.Type == TaskNodeType.Loot) == null)
 						_tasks.Add(new TaskNode(questLoot.Pos, Settings.ClearPathDistance, TaskNodeType.Loot));
 
-					else if(!_hasUsedWP)
+					else if (!_hasUsedWP)
 					{
 						//Check if there's a waypoint nearby
 						var waypoint = GameController.EntityListWrapper.Entities.SingleOrDefault(I => I.Type == ExileCore.Shared.Enums.EntityType.Waypoint &&
 							Vector3.Distance(GameController.Player.Pos, I.Pos) < Settings.ClearPathDistance);
 
-						if (waypoint != null) 
+						if (waypoint != null)
 						{
 							_hasUsedWP = true;
 							_tasks.Add(new TaskNode(waypoint.Pos, Settings.ClearPathDistance, TaskNodeType.ClaimWaypoint));
@@ -257,9 +257,12 @@ namespace Alpha
 			else if (_tasks.Count == 0 &&
 				_lastTargetPosition != Vector3.Zero)
 			{
-				var transition = _areaTransitions.Values.OrderBy(I => Vector3.Distance(_lastTargetPosition, I.Pos)).FirstOrDefault();
-				if (Vector3.Distance(_lastTargetPosition, transition.Pos) < Settings.ClearPathDistance.Value)
-					_tasks.Add(new TaskNode(transition.Pos, Settings.PathfindingNodeDistance.Value, TaskNodeType.Transition));
+
+				var transOptions = _areaTransitions.Values.
+					Where(I => Vector3.Distance(_lastTargetPosition, I.Pos) < Settings.ClearPathDistance).
+					OrderBy(I => Vector3.Distance(_lastTargetPosition, I.Pos)).ToArray();
+				if (transOptions.Length > 0)
+					_tasks.Add(new TaskNode(transOptions[random.Next(transOptions.Length)].Pos, Settings.PathfindingNodeDistance.Value, TaskNodeType.Transition));
 			}
 
 
@@ -332,14 +335,7 @@ namespace Alpha
 					case TaskNodeType.Transition:
 						{
 							_nextBotAction = DateTime.Now.AddMilliseconds(Settings.BotInputFrequency * 2 + random.Next(Settings.BotInputFrequency));
-							var screenPos = WorldToValidScreenPosition(currentTask.WorldPosition);
-							//re-cache transition in case the one used was removed: IE Map portals
-							if (currentTask.AttemptCount >2)
-							{
-								var toTransitions = _areaTransitions.Values.OrderBy(I => Vector3.Distance(currentTask.WorldPosition, I.Pos)).ToArray();
-								if (toTransitions.Length > 1)
-									currentTask.WorldPosition = toTransitions[random.Next(toTransitions.Length)].Pos;
-							}
+							var screenPos = WorldToValidScreenPosition(currentTask.WorldPosition);							
 							if (taskDistance <= Settings.ClearPathDistance.Value)
 							{
 								//Click the transition
@@ -504,6 +500,25 @@ namespace Alpha
 						break;
 				}
 			base.EntityAdded(entity);
+		}
+
+		public override void EntityRemoved(Entity entity)
+		{
+			switch (entity.Type)
+			{
+				//TODO: Handle doors and similar obstructions to movement/pathfinding
+
+				//TODO: Handle waypoint (initial claim as well as using to teleport somewhere)
+
+				//Handle clickable teleporters
+				case ExileCore.Shared.Enums.EntityType.AreaTransition:
+				case ExileCore.Shared.Enums.EntityType.Portal:
+				case ExileCore.Shared.Enums.EntityType.TownPortal:
+					if (_areaTransitions.ContainsKey(entity.Id))
+						_areaTransitions.Remove(entity.Id);
+					break;
+			}
+			base.EntityRemoved(entity);
 		}
 
 
