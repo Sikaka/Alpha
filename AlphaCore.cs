@@ -499,8 +499,10 @@ namespace Alpha
 					case ExileCore.Shared.Enums.EntityType.AreaTransition:
 					case ExileCore.Shared.Enums.EntityType.Portal:
 					case ExileCore.Shared.Enums.EntityType.TownPortal:
-						if (!_areaTransitions.ContainsKey(entity.Id))						
+						if (!_areaTransitions.ContainsKey(entity.Id))
 							_areaTransitions.Add(entity.Id, entity.Pos);
+						else
+							_areaTransitions[entity.Id] = entity.Pos;
 						break;
 				}
 			base.EntityAdded(entity);
