@@ -334,11 +334,11 @@ namespace Alpha
 							_nextBotAction = DateTime.Now.AddMilliseconds(Settings.BotInputFrequency * 2 + random.Next(Settings.BotInputFrequency));
 							var screenPos = WorldToValidScreenPosition(currentTask.WorldPosition);
 							//re-cache transition in case the one used was removed: IE Map portals
-							if (currentTask.AttemptCount >1)
+							if (currentTask.AttemptCount >2)
 							{
-								var toTransition = _areaTransitions.Values.OrderBy(I => Vector3.Distance(currentTask.WorldPosition, I.Pos)).FirstOrDefault();
-								if (toTransition != null && Vector3.Distance(currentTask.WorldPosition, toTransition.Pos) < Settings.ClearPathDistance)
-									currentTask.WorldPosition = toTransition.Pos;
+								var toTransitions = _areaTransitions.Values.OrderBy(I => Vector3.Distance(currentTask.WorldPosition, I.Pos)).ToArray();
+								if (toTransitions.Length > 1)
+									currentTask.WorldPosition = toTransitions[random.Next(toTransitions.Length)].Pos;
 							}
 							if (taskDistance <= Settings.ClearPathDistance.Value)
 							{
