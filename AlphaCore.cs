@@ -181,6 +181,11 @@ namespace Alpha
 
 		public override Job Tick()
 		{
+
+			//Dont run logic if we're dead!
+			if (!GameController.Player.IsAlive)
+				return null;
+
 			if (Settings.ToggleFollower.PressedOnce())
 			{
 				Settings.IsFollowEnabled.SetValueNoEvent(!Settings.IsFollowEnabled.Value);
@@ -223,10 +228,17 @@ namespace Alpha
 				{
 					//Clear all tasks except for looting/claim portal (as those only get done when we're within range of leader. 
 					if (_tasks.Count > 0)
+					{
 						for (var i = _tasks.Count - 1; i >= 0; i--)
 							if (_tasks[i].Type == TaskNodeType.Movement || _tasks[i].Type == TaskNodeType.Transition)
 								_tasks.RemoveAt(i);
-
+					}
+					else if (Settings.IsCloseFollowEnabled.Value)
+					{
+						//Close follow logic. We have no current tasks. Check if we should move towards leader
+						if (distanceFromFollower >= Settings.PathfindingNodeDistance.Value)
+							_tasks.Add(new TaskNode(_followTarget.Pos, Settings.PathfindingNodeDistance));
+					}
 
 					//Check if we should add quest loot logic. We're close to leader already
 					var questLoot = GetLootableQuestItem();
@@ -302,7 +314,8 @@ namespace Alpha
 						Input.KeyUp(Settings.MovementKey);
 
 						//Within bounding range. Task is complete
-						if (taskDistance <= Settings.PathfindingNodeDistance.Value)
+						//Note: Was getting stuck on close objects... testing hacky fix.
+						if (taskDistance <= Settings.PathfindingNodeDistance.Value * 1.5)
 							_tasks.RemoveAt(0);
 						break;
 					case TaskNodeType.Loot:
@@ -546,17 +559,20 @@ namespace Alpha
 
 		private Vector2 WorldToValidScreenPosition(Vector3 worldPos)
 		{
-			var cameraPos = Camera.WorldToScreen(worldPos);
-			
-			//Clamp to inner section of screen. 
-			var window = GameController.Window.GetWindowRectangle();
+			var windowRect = GameController.Window.GetWindowRectangle();
+			var screenPos = Camera.WorldToScreen(worldPos);
+			var result = screenPos + windowRect.Location;
 
-			//We want to clamp to the center of screen.
-			var bounds = new Vector2(window.Width / 5, window.Height / 5);
-			cameraPos = new Vector2(MathUtil.Clamp(cameraPos.X, bounds.X, window.Width- bounds.X),
-				MathUtil.Clamp(cameraPos.Y, bounds.Y, window.Height - bounds.Y));
-
-			return cameraPos;
+			var edgeBounds = 50;
+			if (!windowRect.Intersects(new SharpDX.RectangleF(result.X, result.Y, edgeBounds, edgeBounds)))
+			{
+				//Adjust for offscreen entity. Need to clamp the screen position using the game window info. 
+				if (result.X < windowRect.TopLeft.X) result.X = windowRect.TopLeft.X + edgeBounds;
+				if (result.Y < windowRect.TopLeft.Y) result.Y = windowRect.TopLeft.Y + edgeBounds;
+				if (result.X > windowRect.BottomRight.X) result.X = windowRect.BottomRight.X - edgeBounds;
+				if (result.Y > windowRect.BottomRight.Y) result.Y = windowRect.BottomRight.Y - edgeBounds;
+			}
+			return result;
 		}
 	}
 }
